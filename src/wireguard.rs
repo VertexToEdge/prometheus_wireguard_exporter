@@ -204,6 +204,28 @@ impl WireGuard {
             None
         };
 
+        let mut pc_netmaker_peer_ping = if options.export_netmaker_peer_ping {
+            Some(
+                PrometheusMetric::build()
+                    .with_name("wireguard_netmaker_peer_ping")
+                    .with_metric_type(MetricType::Gauge)
+                    .with_help("Milliseconds from result of ping to peer")
+                    .build(),
+            )
+        } else {
+            None
+        };
+        let mut pc_netmaker_endpoint_ping = if options.export_netmaker_peer_ping {
+            Some(
+                PrometheusMetric::build()
+                    .with_name("wireguard_netmaker_endpoint_ping")
+                    .with_metric_type(MetricType::Gauge)
+                    .with_help("Milliseconds from result of ping to endpoint")
+                    .build(),
+            )
+        } else {
+            None
+        };
         // Here we make sure we process the interfaces in the
         // lexicographical order.
         // This is not stricly necessary but it ensures
@@ -219,10 +241,14 @@ impl WireGuard {
         interfaces_sorted.sort_by(|a, b| a.0.partial_cmp(b.0).unwrap());
 
         for (interface, endpoints) in interfaces_sorted.into_iter() {
+            let mut endpoint_ping_targets: Vec<String> = Vec::new();
+            let mut peer_ping_targets: Vec<String> = Vec::new();
             for endpoint in endpoints {
                 // only show remote endpoints
                 if let Endpoint::Remote(ep) = endpoint {
                     debug!("WireGuard::render_with_names ep == {:?}", ep);
+
+                    endpoint_ping_targets.push(ep.remote_ip.clone().unwrap_or_default());
 
                     // we store in attributes_owned the ownership of the values in order to
                     // store in attibutes their references. attributes_owned is onyl
@@ -231,34 +257,38 @@ impl WireGuard {
                     let mut attributes: Vec<(&str, &str)> =
                         vec![("interface", interface), ("public_key", &ep.public_key)];
 
-                    if options.separate_allowed_ips {
-                        let v_ip_and_subnet: Vec<(&str, &str)> = ep
-                            .allowed_ips
-                            .split(',')
-                            .map(|ip_and_subnet| {
-                                debug!(
-                                    "WireGuard::render_with_names ip_and_subnet == {:?}",
-                                    ip_and_subnet
-                                );
-                                let tokens: Vec<&str> = ip_and_subnet.split('/').collect();
-                                debug!("WireGuard::render_with_names tokens == {:?}", tokens);
-                                let addr = tokens[0];
-                                let subnet = tokens[1];
-                                (addr, subnet)
-                            })
-                            .collect();
+                    let v_ip_and_subnet: Vec<(&str, &str)> = ep
+                        .allowed_ips
+                        .split(',')
+                        .map(|ip_and_subnet| {
+                            debug!(
+                                "WireGuard::render_with_names ip_and_subnet == {:?}",
+                                ip_and_subnet
+                            );
+                            let tokens: Vec<&str> = ip_and_subnet.split('/').collect();
+                            debug!("WireGuard::render_with_names tokens == {:?}", tokens);
+                            let addr = tokens[0];
+                            let subnet = tokens[1];
+                            (addr, subnet)
+                        })
+                        .collect();
 
-                        for (idx, (ip, subnet)) in v_ip_and_subnet.iter().enumerate() {
+                    for (idx, (ip, subnet)) in v_ip_and_subnet.iter().enumerate() {
+                        if options.separate_allowed_ips {
                             attributes_owned
                                 .push((format!("allowed_ip_{}", idx), (*ip).to_string()));
                             attributes_owned
                                 .push((format!("allowed_subnet_{}", idx), (*subnet).to_string()));
                         }
-                        debug!(
-                            "WireGuard::render_with_names attributes == {:?}",
-                            attributes
-                        );
-                    } else {
+                        if subnet == &"32" {
+                            peer_ping_targets.push(ip.to_string());
+                        }
+                    }
+                    debug!(
+                        "WireGuard::render_with_names attributes == {:?}",
+                        attributes
+                    );
+                    if !options.separate_allowed_ips {
                         attributes.push(("allowed_ips", &ep.allowed_ips));
                     }
 
@@ -321,6 +351,21 @@ impl WireGuard {
                         instance = instance.with_label(h, v);
                     }
 
+                    let peer_ping_futures = peer_ping_targets
+                        .clone()
+                        .into_iter()
+                        .map(|peer| surge_ping::ping(peer.parse().expect("parse failed"), &[0, 8]));
+
+                    let endpoint_ping_futures =
+                        endpoint_ping_targets.clone().into_iter().map(|endpoint| {
+                            surge_ping::ping(endpoint.parse().expect("parse failed"), &[0, 8])
+                        });
+
+                    let peer_ping_result =
+                        futures::executor::block_on(futures::future::join_all(peer_ping_futures));
+                    let endpoint_ping_result = futures::executor::block_on(
+                        futures::future::join_all(endpoint_ping_futures),
+                    );
                     pc_latest_handshake_delay
                         .as_mut()
                         .map(|pc_latest_handshake_delay| {
@@ -439,6 +484,7 @@ wg0\tsUsR6xufQQ8Tf0FuyY9tfEeYdhVMeFelr4ZMUrj+B0E=\t(none)\t10.211.123.128:51820\
             interfaces: None,
             export_remote_ip_and_port: true,
             export_latest_handshake_delay: false,
+            export_netmaker_peer_ping: false,
         };
 
         let s = a.render_with_names(Some(&pe), &options);
@@ -540,6 +586,7 @@ wireguard_latest_handshake_seconds{interface=\"wg0\",public_key=\"sUsR6xufQQ8Tf0
             interfaces: None,
             export_remote_ip_and_port: true,
             export_latest_handshake_delay: true,
+            export_netmaker_peer_ping: false,
         };
 
         let s = a.render_with_names(None, &options);
@@ -575,6 +622,7 @@ wireguard_latest_handshake_seconds{interface=\"wg0\",public_key=\"sUsR6xufQQ8Tf0
             interfaces: None,
             export_remote_ip_and_port: true,
             export_latest_handshake_delay: false,
+            export_netmaker_peer_ping: false,
         };
 
         let prometheus = wg.render_with_names(None, &options);
@@ -640,6 +688,7 @@ wireguard_latest_handshake_seconds{interface=\"wg0\",public_key=\"sUsR6xufQQ8Tf0
             interfaces: None,
             export_remote_ip_and_port: true,
             export_latest_handshake_delay: false,
+            export_netmaker_peer_ping: false,
         };
 
         let prometheus = wg.render_with_names(Some(&pehm), &options);
