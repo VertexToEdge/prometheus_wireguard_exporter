@@ -10,6 +10,7 @@ use std::convert::TryFrom;
 use std::fmt::Debug;
 use std::net::SocketAddr;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use surge_ping::IcmpPacket;
 
 const EMPTY: &str = "(none)";
 
@@ -366,6 +367,62 @@ impl WireGuard {
                     let endpoint_ping_result = futures::executor::block_on(
                         futures::future::join_all(endpoint_ping_futures),
                     );
+
+                    for (_, peer_ping_result) in peer_ping_result.iter().enumerate() {
+                        if let Ok(ping_result) = peer_ping_result {
+                            let mut ping_instance = instance.clone();
+                            let (packet, duration) = ping_result;
+                            let duration = duration.as_millis() as u64;
+                            let ping_destination = (match packet {
+                                IcmpPacket::V4(icmp_packet_v4) => {
+                                    icmp_packet_v4.get_destination().to_string()
+                                }
+                                IcmpPacket::V6(icmp_packet_v6) => {
+                                    icmp_packet_v6.get_destination().to_string()
+                                }
+                            });
+
+                            ping_instance =
+                                ping_instance.with_label("peer", ping_destination.as_str());
+
+                            // pc_netmaker_peer_ping
+                            //     .render_and_append_instance(&ping_instance.clone().with_value(duration));
+
+                            pc_netmaker_peer_ping.as_mut().map(|pc_netmaker_peer_ping| {
+                                pc_netmaker_peer_ping.render_and_append_instance(
+                                    &ping_instance.clone().with_value(duration),
+                                )
+                            });
+                        }
+                    }
+
+                    for (_, endpoint_ping_result) in endpoint_ping_result.iter().enumerate() {
+                        if let Ok(ping_result) = endpoint_ping_result {
+                            let mut ping_instance = instance.clone();
+                            let (packet, duration) = ping_result;
+                            let duration = duration.as_millis() as u64;
+                            let ping_destination = (match packet {
+                                IcmpPacket::V4(icmp_packet_v4) => {
+                                    icmp_packet_v4.get_destination().to_string()
+                                }
+                                IcmpPacket::V6(icmp_packet_v6) => {
+                                    icmp_packet_v6.get_destination().to_string()
+                                }
+                            });
+
+                            ping_instance =
+                                ping_instance.with_label("endpoint", ping_destination.as_str());
+
+                            pc_netmaker_endpoint_ping
+                                .as_mut()
+                                .map(|pc_netmaker_endpoint_ping| {
+                                    pc_netmaker_endpoint_ping.render_and_append_instance(
+                                        &ping_instance.clone().with_value(duration),
+                                    )
+                                });
+                        }
+                    }
+
                     pc_latest_handshake_delay
                         .as_mut()
                         .map(|pc_latest_handshake_delay| {
@@ -374,16 +431,20 @@ impl WireGuard {
                                 .duration_since(earlier)
                                 .expect("time went backwards");
                             pc_latest_handshake_delay.render_and_append_instance(
-                                &instance.clone().with_value(delta.as_secs() as u128),
+                                &instance.clone().with_value(delta.as_secs()),
                             )
                         });
 
                     pc_sent_bytes_total
-                        .render_and_append_instance(&instance.clone().with_value(ep.sent_bytes))
+                        .render_and_append_instance(
+                            &instance.clone().with_value(ep.sent_bytes as u64),
+                        )
                         .render();
 
                     pc_received_bytes_total
-                        .render_and_append_instance(&instance.clone().with_value(ep.received_bytes))
+                        .render_and_append_instance(
+                            &instance.clone().with_value(ep.received_bytes as u64),
+                        )
                         .render();
 
                     pc_latest_handshake.render_and_append_instance(
@@ -394,7 +455,7 @@ impl WireGuard {
         }
 
         format!(
-            "{}\n{}\n{}{}",
+            "{}\n{}\n{}{}{}{}",
             pc_sent_bytes_total.render(),
             pc_received_bytes_total.render(),
             pc_latest_handshake.render(),
@@ -402,6 +463,16 @@ impl WireGuard {
                 // this row adds pc_latest_handshake_delay only if configured
                 || "".to_owned(),
                 |pc_latest_handshake_delay| format!("\n{}", pc_latest_handshake_delay.render())
+            ),
+            pc_netmaker_peer_ping.map_or_else(
+                // this row adds pc_netmaker_peer_ping only if configured
+                || "".to_owned(),
+                |pc_netmaker_peer_ping| format!("\n{}", pc_netmaker_peer_ping.render())
+            ),
+            pc_netmaker_endpoint_ping.map_or_else(
+                // this row adds pc_netmaker_endpoint_ping only if configured
+                || "".to_owned(),
+                |pc_netmaker_endpoint_ping| format!("\n{}", pc_netmaker_endpoint_ping.render())
             )
         )
     }
