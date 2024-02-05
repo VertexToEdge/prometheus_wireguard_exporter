@@ -365,14 +365,18 @@ impl WireGuard {
                     }
 
                     let mut instance = PrometheusInstance::new();
-                    for (h, v) in attributes {
+                    for (h, v) in attributes.clone() {
                         instance = instance.with_label(h, v);
                     }
                     if options.export_netmaker_peer_ping {
                         //instance_attributes
-                        for (h, v) in &attributes_owned {
-                            instance_attributes.push((h.clone(), v.clone()));
+                        for (h, v) in attributes.clone() {
+                            instance_attributes.push(((*h).to_string(), (*v).to_string()));
                         }
+                        // info!(
+                        //     "WireGuard::render_with_names peer_ping_targets == {:?}",
+                        //     instance_attributes.clone().iter().map(|(h, v)| h + " / " v).collect::<Vec<&String>>()
+                        // );
                         // for (h, v) in &attributes {
                         //     ping_instance = ping_instance.with_label(h.clone(), v.clone());
                         // }
