@@ -373,19 +373,8 @@ impl WireGuard {
                         for (h, v) in attributes.clone() {
                             instance_attributes.push(((*h).to_string(), (*v).to_string()));
                         }
-                        // info!(
-                        //     "WireGuard::render_with_names peer_ping_targets == {:?}",
-                        //     instance_attributes.clone().iter().map(|(h, v)| h + " / " v).collect::<Vec<&String>>()
-                        // );
-                        // for (h, v) in &attributes {
-                        //     ping_instance = ping_instance.with_label(h.clone(), v.clone());
-                        // }
 
-                        // info!(
-                        //     "WireGuard::render_with_names peer_ping_targets == {:?}",
-                        //     peer_ping_targets.join(", ")
-                        // );
-                        println!(
+                        debug!(
                             "WireGuard::render_with_names peer_ping_targets == {:?}",
                             peer_ping_targets.join(", ")
                         );
@@ -432,8 +421,6 @@ impl WireGuard {
                         &instance.with_value(ep.latest_handshake.into()),
                     );
                 }
-                // info!("Options::export_netmaker_peer_ping == {:?}", options.export_netmaker_peer_ping);
-                //
             }
             if options.export_netmaker_peer_ping {
                 let peer_ping_results = futures::future::join_all(peer_ping_futures).await;
