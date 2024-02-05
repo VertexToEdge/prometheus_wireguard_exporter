@@ -3,7 +3,7 @@ use crate::options::Options;
 use crate::wireguard_config::PeerEntryHashMap;
 use crate::FriendlyDescription;
 use log::{debug, trace};
-use prometheus_exporter_base::{MetricType, MissingValue, PrometheusInstance, PrometheusMetric};
+use prometheus_exporter_base::{MetricType, PrometheusInstance, PrometheusMetric};
 use regex::Regex;
 use std::collections::HashMap;
 use std::convert::TryFrom;
@@ -154,7 +154,6 @@ impl TryFrom<&str> for WireGuard {
 }
 
 impl WireGuard {
-    
     pub fn merge(&mut self, merge_from: &WireGuard) {
         for (interface_name, endpoints_to_merge) in merge_from.interfaces.iter() {
             if let Some(endpoints) = self.interfaces.get_mut(interface_name as &str) {
@@ -167,15 +166,19 @@ impl WireGuard {
         }
     }
     async fn ping_peer<'a>(
-        instance: PrometheusInstance<'a, u64, MissingValue>,
-        peer: &'a String,
-    ) -> (PrometheusInstance<'a, u64, MissingValue>, String, Duration) {
+        instance_attributes: Vec<(String, String)>,
+        peer: String,
+    ) -> (Vec<(String, String)>, String, Duration) {
         let peer_ping = surge_ping::ping(peer.parse().expect("parse failed"), &[0, 8]).await;
         if let Ok(ping_result) = peer_ping {
             let (_, duration) = ping_result;
-            (instance, peer.to_owned(), duration)
+            (instance_attributes, peer.to_owned(), duration)
         } else {
-            (instance, peer.to_owned(), Duration::from_secs(99999))
+            (
+                instance_attributes,
+                peer.to_owned(),
+                Duration::from_secs(99999),
+            )
         }
     }
     pub(crate) async fn render_with_names(
@@ -256,9 +259,9 @@ impl WireGuard {
             let mut peer_ping_futures = Vec::new();
             let mut endpoint_ping_futures = Vec::new();
             for endpoint in endpoints {
-                let mut endpoint_ping_targets: Vec<String> = Vec::new();
                 let mut peer_ping_targets: Vec<String> = Vec::new();
-
+                let mut endpoint_ping_targets: Vec<String> = Vec::new();
+                let mut instance_attributes: Vec<(String, String)> = Vec::new();
                 // only show remote endpoints
                 if let Endpoint::Remote(ep) = endpoint {
                     debug!("WireGuard::render_with_names ep == {:?}", ep);
@@ -366,6 +369,14 @@ impl WireGuard {
                         instance = instance.with_label(h, v);
                     }
                     if options.export_netmaker_peer_ping {
+                        //instance_attributes
+                        for (h, v) in &attributes_owned {
+                            instance_attributes.push((h.clone(), v.clone()));
+                        }
+                        // for (h, v) in &attributes {
+                        //     ping_instance = ping_instance.with_label(h.clone(), v.clone());
+                        // }
+
                         // info!(
                         //     "WireGuard::render_with_names peer_ping_targets == {:?}",
                         //     peer_ping_targets.join(", ")
@@ -374,16 +385,20 @@ impl WireGuard {
                             "WireGuard::render_with_names peer_ping_targets == {:?}",
                             peer_ping_targets.join(", ")
                         );
-                        peer_ping_futures.extend(
-                            peer_ping_targets
-                                .iter()
-                                .map(|peer| WireGuard::ping_peer(instance.clone(), peer)),
-                        );
-                        endpoint_ping_futures.extend(
-                            endpoint_ping_targets
-                                .iter()
-                                .map(|endpoint| WireGuard::ping_peer(instance.clone(), endpoint)),
-                        );
+
+                        for peer in peer_ping_targets {
+                            peer_ping_futures.push(WireGuard::ping_peer(
+                                instance_attributes.clone(),
+                                peer.to_string(),
+                            ));
+                        }
+
+                        for endpoint in endpoint_ping_targets {
+                            endpoint_ping_futures.push(WireGuard::ping_peer(
+                                instance_attributes.clone(),
+                                endpoint.to_string(),
+                            ));
+                        }
                     }
                     pc_latest_handshake_delay
                         .as_mut()
@@ -421,14 +436,14 @@ impl WireGuard {
                 let endpoint_ping_results = futures::future::join_all(endpoint_ping_futures).await;
 
                 for (_, peer_ping_result) in peer_ping_results.iter().enumerate() {
-                    let (ping_instance, destination, duration) = peer_ping_result;
+                    let (instance_attributes, destination, duration) = peer_ping_result;
                     let duration = duration.as_millis() as u64;
 
-                    let ping_instance =
-                        &(ping_instance.clone()).with_label("peer", destination.as_str());
-
-                    // pc_netmaker_peer_ping
-                    //     .render_and_append_instance(&ping_instance.clone().with_value(duration));
+                    let mut ping_instance = PrometheusInstance::new();
+                    for (h, v) in instance_attributes {
+                        ping_instance = ping_instance.with_label(h.as_str(), v.as_str());
+                    }
+                    ping_instance = ping_instance.with_label("peer", destination.as_str());
 
                     pc_netmaker_peer_ping.as_mut().map(|pc_netmaker_peer_ping| {
                         pc_netmaker_peer_ping
@@ -437,21 +452,24 @@ impl WireGuard {
                 }
 
                 for (_, endpoint_ping_result) in endpoint_ping_results.iter().enumerate() {
-                    let (ping_instance, destination, duration) = endpoint_ping_result;
+                    let (instance_attributes, destination, duration) = endpoint_ping_result;
                     let duration = duration.as_millis() as u64;
 
-                    let ping_instance =
-                        &(ping_instance.clone()).with_label("endpoint", destination.as_str());
+                    let mut ping_instance = PrometheusInstance::new();
+                    for (h, v) in instance_attributes {
+                        ping_instance = ping_instance.with_label(h.as_str(), v.as_str());
+                    }
+                    ping_instance = ping_instance.with_label("endpoint", destination.as_str());
 
                     pc_netmaker_endpoint_ping
                         .as_mut()
                         .map(|pc_netmaker_endpoint_ping| {
-                            pc_netmaker_endpoint_ping
-                                .render_and_append_instance(&ping_instance.clone().with_value(duration))
+                            pc_netmaker_endpoint_ping.render_and_append_instance(
+                                &ping_instance.clone().with_value(duration),
+                            )
                         });
                 }
             }
-
         }
 
         format!(
@@ -557,8 +575,9 @@ wg0\tsUsR6xufQQ8Tf0FuyY9tfEeYdhVMeFelr4ZMUrj+B0E=\t(none)\t10.211.123.128:51820\
             export_latest_handshake_delay: false,
             export_netmaker_peer_ping: false,
         };
-
-        let s = a.render_with_names(Some(&pe), &options);
+        let handle = tokio::runtime::Handle::current();
+        let _ = handle.enter();
+        let s = futures::executor::block_on(a.render_with_names(Some(&pe), &options));
         println!("{}", s);
 
         let s_ok = "# HELP wireguard_sent_bytes_total Bytes sent to the peer
@@ -659,8 +678,9 @@ wireguard_latest_handshake_seconds{interface=\"wg0\",public_key=\"sUsR6xufQQ8Tf0
             export_latest_handshake_delay: true,
             export_netmaker_peer_ping: false,
         };
-
-        let s = a.render_with_names(None, &options);
+        let handle = tokio::runtime::Handle::current();
+        let _ = handle.enter();
+        let s = futures::executor::block_on(a.render_with_names(None, &options));
         println!("{}", s);
     }
 
@@ -695,8 +715,9 @@ wireguard_latest_handshake_seconds{interface=\"wg0\",public_key=\"sUsR6xufQQ8Tf0
             export_latest_handshake_delay: false,
             export_netmaker_peer_ping: false,
         };
-
-        let prometheus = wg.render_with_names(None, &options);
+        let handle = tokio::runtime::Handle::current();
+        let _ = handle.enter();
+        let prometheus = futures::executor::block_on(wg.render_with_names(None, &options));
 
         assert_eq!(prometheus, REF);
     }
@@ -761,18 +782,20 @@ wireguard_latest_handshake_seconds{interface=\"wg0\",public_key=\"sUsR6xufQQ8Tf0
             export_latest_handshake_delay: false,
             export_netmaker_peer_ping: false,
         };
+        let handle = tokio::runtime::Handle::current();
+        let _ = handle.enter();
 
-        let prometheus = wg.render_with_names(Some(&pehm), &options);
+        let prometheus = futures::executor::block_on(wg.render_with_names(Some(&pehm), &options));
         assert_eq!(prometheus, REF);
 
         options.separate_allowed_ips = true;
 
-        let prometheus = wg.render_with_names(Some(&pehm), &options);
+        let prometheus = futures::executor::block_on(wg.render_with_names(Some(&pehm), &options));
         assert_eq!(prometheus, REF_SPLIT);
 
         options.export_remote_ip_and_port = false;
 
-        let prometheus = wg.render_with_names(Some(&pehm), &options);
+        let prometheus = futures::executor::block_on(wg.render_with_names(Some(&pehm), &options));
         assert_eq!(prometheus, REF_SPLIT_NO_REMOTE);
 
         // second test
@@ -803,7 +826,7 @@ wireguard_latest_handshake_seconds{interface=\"wg0\",public_key=\"sUsR6xufQQ8Tf0
         options.separate_allowed_ips = false;
         options.export_remote_ip_and_port = true;
 
-        let prometheus = wg.render_with_names(Some(&pehm), &options);
+        let prometheus = futures::executor::block_on(wg.render_with_names(Some(&pehm), &options));
         assert_eq!(prometheus, REF_JSON);
     }
 }
