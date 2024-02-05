@@ -9,9 +9,9 @@ use std::collections::HashMap;
 use std::convert::TryFrom;
 use std::fmt::Debug;
 use std::net::SocketAddr;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{SystemTime, UNIX_EPOCH};
+use std::{net::IpAddr, time::Duration};
 use surge_ping::IcmpPacket;
-use tokio::runtime::Handle;
 
 const EMPTY: &str = "(none)";
 
@@ -361,6 +361,11 @@ impl WireGuard {
                             "WireGuard::render_with_names peer_ping_targets == {:?}",
                             peer_ping_targets.join(", ")
                         );
+                        println!(
+                            "WireGuard::render_with_names endpoint_ping_targets == {:?}",
+                            endpoint_ping_targets.join(", ")
+                        );
+                        
                         let peer_ping_futures = peer_ping_targets.clone().into_iter().map(|peer| {
                             surge_ping::ping(peer.parse().expect("parse failed"), &[0, 8])
                         });
@@ -369,24 +374,25 @@ impl WireGuard {
                             endpoint_ping_targets.clone().into_iter().map(|endpoint| {
                                 surge_ping::ping(endpoint.parse().expect("parse failed"), &[0, 8])
                             });
-
+                            peer_ping_targets.clear();
+                            endpoint_ping_targets.clear();
                         // let handle = Handle::current();
                         // handle.enter();
-                        let peer_ping_result = [futures::future::join_all(peer_ping_futures)];
+                        let peer_ping_results = futures::future::join_all(peer_ping_futures).await;
                         
-                        let endpoint_ping_result = [futures::future::join_all(endpoint_ping_futures)];
+                        let endpoint_ping_results = futures::future::join_all(endpoint_ping_futures).await;
 
-                        for (_, peer_ping_result) in peer_ping_result.iter().enumerate() {
+                        for (_, peer_ping_result) in peer_ping_results.iter().enumerate() {
                             if let Ok(ping_result) = peer_ping_result {
                                 let mut ping_instance = instance.clone();
-                                let (packet, duration) = ping_result;
+                                let (packet, duration):&(IcmpPacket, Duration) = ping_result;
                                 let duration = duration.as_millis() as u64;
                                 let ping_destination = match packet {
                                     IcmpPacket::V4(icmp_packet_v4) => {
-                                        icmp_packet_v4.get_destination().to_string()
+                                        icmp_packet_v4.get_real_dest().to_string()
                                     }
                                     IcmpPacket::V6(icmp_packet_v6) => {
-                                        icmp_packet_v6.get_destination().to_string()
+                                        icmp_packet_v6.get_real_dest().to_string()
                                     }
                                 };
 
@@ -401,20 +407,22 @@ impl WireGuard {
                                         &ping_instance.clone().with_value(duration),
                                     )
                                 });
+                            } else {
+                                println!("ping_result == {:?}", ping_result);
                             }
                         }
 
-                        for (_, endpoint_ping_result) in endpoint_ping_result.iter().enumerate() {
+                        for (_, endpoint_ping_result) in endpoint_ping_results.iter().enumerate() {
                             if let Ok(ping_result) = endpoint_ping_result {
                                 let mut ping_instance = instance.clone();
-                                let (packet, duration) = ping_result;
+                                let (packet, duration):&(IcmpPacket, Duration) = ping_result;
                                 let duration = duration.as_millis() as u64;
                                 let ping_destination = match packet {
                                     IcmpPacket::V4(icmp_packet_v4) => {
-                                        icmp_packet_v4.get_destination().to_string()
+                                        icmp_packet_v4.get_real_dest().to_string()
                                     }
                                     IcmpPacket::V6(icmp_packet_v6) => {
-                                        icmp_packet_v6.get_destination().to_string()
+                                        icmp_packet_v6.get_real_dest().to_string()
                                     }
                                 };
 
