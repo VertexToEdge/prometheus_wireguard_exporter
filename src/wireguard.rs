@@ -177,7 +177,7 @@ impl WireGuard {
             (
                 instance_attributes,
                 peer.to_owned(),
-                Duration::from_secs(99999),
+                Duration::from_millis(99999999),
             )
         }
     }
