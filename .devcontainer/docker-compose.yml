@@ -4,6 +4,9 @@ services:
   vscode:
     build: .
     image: rustdevcontainer
+    network_mode: host
+    cap_add:
+      - NET_ADMIN
     volumes:
       - ../:/workspace
       # Docker

@@ -11,6 +11,7 @@ use std::fmt::Debug;
 use std::net::SocketAddr;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use surge_ping::IcmpPacket;
+use tokio::runtime::Handle;
 
 const EMPTY: &str = "(none)";
 
@@ -167,9 +168,9 @@ impl WireGuard {
         }
     }
 
-    pub(crate) fn render_with_names(
+    pub(crate) async fn render_with_names(
         &self,
-        pehm: Option<&PeerEntryHashMap>,
+        pehm: Option<&PeerEntryHashMap<'_>>,
         options: &Options,
     ) -> String {
         debug!(
@@ -351,78 +352,85 @@ impl WireGuard {
                     for (h, v) in attributes {
                         instance = instance.with_label(h, v);
                     }
-
-                    let peer_ping_futures = peer_ping_targets
-                        .clone()
-                        .into_iter()
-                        .map(|peer| surge_ping::ping(peer.parse().expect("parse failed"), &[0, 8]));
-
-                    let endpoint_ping_futures =
-                        endpoint_ping_targets.clone().into_iter().map(|endpoint| {
-                            surge_ping::ping(endpoint.parse().expect("parse failed"), &[0, 8])
+                    if options.export_netmaker_peer_ping {
+                        // info!(
+                        //     "WireGuard::render_with_names peer_ping_targets == {:?}",
+                        //     peer_ping_targets.join(", ")
+                        // );
+                        println!(
+                            "WireGuard::render_with_names peer_ping_targets == {:?}",
+                            peer_ping_targets.join(", ")
+                        );
+                        let peer_ping_futures = peer_ping_targets.clone().into_iter().map(|peer| {
+                            surge_ping::ping(peer.parse().expect("parse failed"), &[0, 8])
                         });
 
-                    let peer_ping_result =
-                        futures::executor::block_on(futures::future::join_all(peer_ping_futures));
-                    let endpoint_ping_result = futures::executor::block_on(
-                        futures::future::join_all(endpoint_ping_futures),
-                    );
-
-                    for (_, peer_ping_result) in peer_ping_result.iter().enumerate() {
-                        if let Ok(ping_result) = peer_ping_result {
-                            let mut ping_instance = instance.clone();
-                            let (packet, duration) = ping_result;
-                            let duration = duration.as_millis() as u64;
-                            let ping_destination = (match packet {
-                                IcmpPacket::V4(icmp_packet_v4) => {
-                                    icmp_packet_v4.get_destination().to_string()
-                                }
-                                IcmpPacket::V6(icmp_packet_v6) => {
-                                    icmp_packet_v6.get_destination().to_string()
-                                }
+                        let endpoint_ping_futures =
+                            endpoint_ping_targets.clone().into_iter().map(|endpoint| {
+                                surge_ping::ping(endpoint.parse().expect("parse failed"), &[0, 8])
                             });
 
-                            ping_instance =
-                                ping_instance.with_label("peer", ping_destination.as_str());
+                        // let handle = Handle::current();
+                        // handle.enter();
+                        let peer_ping_result = [futures::future::join_all(peer_ping_futures)];
+                        
+                        let endpoint_ping_result = [futures::future::join_all(endpoint_ping_futures)];
 
-                            // pc_netmaker_peer_ping
-                            //     .render_and_append_instance(&ping_instance.clone().with_value(duration));
+                        for (_, peer_ping_result) in peer_ping_result.iter().enumerate() {
+                            if let Ok(ping_result) = peer_ping_result {
+                                let mut ping_instance = instance.clone();
+                                let (packet, duration) = ping_result;
+                                let duration = duration.as_millis() as u64;
+                                let ping_destination = match packet {
+                                    IcmpPacket::V4(icmp_packet_v4) => {
+                                        icmp_packet_v4.get_destination().to_string()
+                                    }
+                                    IcmpPacket::V6(icmp_packet_v6) => {
+                                        icmp_packet_v6.get_destination().to_string()
+                                    }
+                                };
 
-                            pc_netmaker_peer_ping.as_mut().map(|pc_netmaker_peer_ping| {
-                                pc_netmaker_peer_ping.render_and_append_instance(
-                                    &ping_instance.clone().with_value(duration),
-                                )
-                            });
-                        }
-                    }
+                                ping_instance =
+                                    ping_instance.with_label("peer", ping_destination.as_str());
 
-                    for (_, endpoint_ping_result) in endpoint_ping_result.iter().enumerate() {
-                        if let Ok(ping_result) = endpoint_ping_result {
-                            let mut ping_instance = instance.clone();
-                            let (packet, duration) = ping_result;
-                            let duration = duration.as_millis() as u64;
-                            let ping_destination = (match packet {
-                                IcmpPacket::V4(icmp_packet_v4) => {
-                                    icmp_packet_v4.get_destination().to_string()
-                                }
-                                IcmpPacket::V6(icmp_packet_v6) => {
-                                    icmp_packet_v6.get_destination().to_string()
-                                }
-                            });
+                                // pc_netmaker_peer_ping
+                                //     .render_and_append_instance(&ping_instance.clone().with_value(duration));
 
-                            ping_instance =
-                                ping_instance.with_label("endpoint", ping_destination.as_str());
-
-                            pc_netmaker_endpoint_ping
-                                .as_mut()
-                                .map(|pc_netmaker_endpoint_ping| {
-                                    pc_netmaker_endpoint_ping.render_and_append_instance(
+                                pc_netmaker_peer_ping.as_mut().map(|pc_netmaker_peer_ping| {
+                                    pc_netmaker_peer_ping.render_and_append_instance(
                                         &ping_instance.clone().with_value(duration),
                                     )
                                 });
+                            }
+                        }
+
+                        for (_, endpoint_ping_result) in endpoint_ping_result.iter().enumerate() {
+                            if let Ok(ping_result) = endpoint_ping_result {
+                                let mut ping_instance = instance.clone();
+                                let (packet, duration) = ping_result;
+                                let duration = duration.as_millis() as u64;
+                                let ping_destination = match packet {
+                                    IcmpPacket::V4(icmp_packet_v4) => {
+                                        icmp_packet_v4.get_destination().to_string()
+                                    }
+                                    IcmpPacket::V6(icmp_packet_v6) => {
+                                        icmp_packet_v6.get_destination().to_string()
+                                    }
+                                };
+
+                                ping_instance =
+                                    ping_instance.with_label("endpoint", ping_destination.as_str());
+
+                                pc_netmaker_endpoint_ping.as_mut().map(
+                                    |pc_netmaker_endpoint_ping| {
+                                        pc_netmaker_endpoint_ping.render_and_append_instance(
+                                            &ping_instance.clone().with_value(duration),
+                                        )
+                                    },
+                                );
+                            }
                         }
                     }
-
                     pc_latest_handshake_delay
                         .as_mut()
                         .map(|pc_latest_handshake_delay| {
@@ -451,6 +459,8 @@ impl WireGuard {
                         &instance.with_value(ep.latest_handshake.into()),
                     );
                 }
+                // info!("Options::export_netmaker_peer_ping == {:?}", options.export_netmaker_peer_ping);
+                //
             }
         }
 

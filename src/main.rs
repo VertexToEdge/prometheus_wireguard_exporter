@@ -105,7 +105,7 @@ async fn perform_request(
     }
 
     if let Some(wg_accumulator) = wg_accumulator {
-        Ok(wg_accumulator.render_with_names(peer_entry_hashmap.as_ref(), &options))
+        Ok(wg_accumulator.render_with_names(peer_entry_hashmap.as_ref(), &options).await)
     } else {
         panic!();
     }
