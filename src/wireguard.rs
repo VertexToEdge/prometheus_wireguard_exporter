@@ -177,7 +177,7 @@ impl WireGuard {
             (
                 instance_attributes,
                 peer.to_owned(),
-                Duration::from_millis(99999999),
+                Duration::from_millis(40000000), // default timeout of surge_ping is 2 seconds. This is a default value for a failed ping
             )
         }
     }

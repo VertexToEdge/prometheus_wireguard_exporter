@@ -105,7 +105,9 @@ async fn perform_request(
     }
 
     if let Some(wg_accumulator) = wg_accumulator {
-        Ok(wg_accumulator.render_with_names(peer_entry_hashmap.as_ref(), &options).await)
+        Ok(wg_accumulator
+            .render_with_names(peer_entry_hashmap.as_ref(), &options)
+            .await)
     } else {
         panic!();
     }
@@ -196,12 +198,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 .default_value("false")
         ).arg(
             Arg::new("export_netmaker_peer_ping")
-                .short('p')
+                .short('N')
                 .long("export_netmaker_peer_ping")
                 .env("EXPORT_NETMAKER_PEER_PING")
                 .value_parser(value_parser!(bool))
                 .help("exports runtime calculated peer ping (if available)")
-                .default_value("false")
+                .default_value("true")
         )
          .get_matches();
 
