@@ -256,6 +256,11 @@ impl WireGuard {
         interfaces_sorted.sort_by(|a, b| a.0.partial_cmp(b.0).unwrap());
 
         for (interface, endpoints) in interfaces_sorted.into_iter() {
+            let src_public_key = if let Some(Endpoint::Local(le)) = endpoints.first() {
+                le.public_key.clone()
+            } else {
+                "".to_owned()
+            };
             let mut peer_ping_futures = Vec::new();
             let mut endpoint_ping_futures = Vec::new();
             for endpoint in endpoints {
@@ -272,8 +277,11 @@ impl WireGuard {
                     // store in attibutes their references. attributes_owned is onyl
                     // needed for separate ip+subnet
                     let mut attributes_owned: Vec<(String, String)> = Vec::new();
-                    let mut attributes: Vec<(&str, &str)> =
-                        vec![("interface", interface), ("public_key", &ep.public_key)];
+                    let mut attributes: Vec<(&str, &str)> = vec![
+                        ("interface", interface),
+                        ("dst_public_key", &ep.public_key),
+                        ("src_public_key", &src_public_key),
+                    ];
 
                     let v_ip_and_subnet: Vec<(&str, &str)> = ep
                         .allowed_ips
