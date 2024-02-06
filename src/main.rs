@@ -197,10 +197,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 .help("exports runtime calculated latest handshake delay")
                 .default_value("false")
         ).arg(
-            Arg::new("export_netmaker_peer_ping")
+            Arg::new("export_peer_ping")
                 .short('N')
-                .long("export_netmaker_peer_ping")
-                .env("EXPORT_NETMAKER_PEER_PING")
+                .long("export_peer_ping")
+                .env("EXPORT_PEER_PING")
                 .value_parser(value_parser!(bool))
                 .help("exports runtime calculated peer ping (if available)")
                 .default_value("true")

@@ -219,10 +219,10 @@ impl WireGuard {
             None
         };
 
-        let mut pc_netmaker_peer_ping = if options.export_netmaker_peer_ping {
+        let mut pc_peer_ping = if options.export_peer_ping {
             Some(
                 PrometheusMetric::build()
-                    .with_name("wireguard_netmaker_peer_ping")
+                    .with_name("wireguard_peer_ping")
                     .with_metric_type(MetricType::Gauge)
                     .with_help("Milliseconds from result of ping to peer")
                     .build(),
@@ -230,10 +230,10 @@ impl WireGuard {
         } else {
             None
         };
-        let mut pc_netmaker_endpoint_ping = if options.export_netmaker_peer_ping {
+        let mut pc_endpoint_ping = if options.export_peer_ping {
             Some(
                 PrometheusMetric::build()
-                    .with_name("wireguard_netmaker_endpoint_ping")
+                    .with_name("wireguard_endpoint_ping")
                     .with_metric_type(MetricType::Gauge)
                     .with_help("Milliseconds from result of ping to endpoint")
                     .build(),
@@ -368,7 +368,7 @@ impl WireGuard {
                     for (h, v) in attributes.clone() {
                         instance = instance.with_label(h, v);
                     }
-                    if options.export_netmaker_peer_ping {
+                    if options.export_peer_ping {
                         //instance_attributes
                         for (h, v) in attributes.clone() {
                             instance_attributes.push(((*h).to_string(), (*v).to_string()));
@@ -422,7 +422,7 @@ impl WireGuard {
                     );
                 }
             }
-            if options.export_netmaker_peer_ping {
+            if options.export_peer_ping {
                 let peer_ping_results = futures::future::join_all(peer_ping_futures).await;
                 let endpoint_ping_results = futures::future::join_all(endpoint_ping_futures).await;
 
@@ -436,8 +436,8 @@ impl WireGuard {
                     }
                     ping_instance = ping_instance.with_label("peer", destination.as_str());
 
-                    pc_netmaker_peer_ping.as_mut().map(|pc_netmaker_peer_ping| {
-                        pc_netmaker_peer_ping
+                    pc_peer_ping.as_mut().map(|pc_peer_ping| {
+                        pc_peer_ping
                             .render_and_append_instance(&ping_instance.clone().with_value(duration))
                     });
                 }
@@ -452,13 +452,10 @@ impl WireGuard {
                     }
                     ping_instance = ping_instance.with_label("endpoint", destination.as_str());
 
-                    pc_netmaker_endpoint_ping
-                        .as_mut()
-                        .map(|pc_netmaker_endpoint_ping| {
-                            pc_netmaker_endpoint_ping.render_and_append_instance(
-                                &ping_instance.clone().with_value(duration),
-                            )
-                        });
+                    pc_endpoint_ping.as_mut().map(|pc_endpoint_ping| {
+                        pc_endpoint_ping
+                            .render_and_append_instance(&ping_instance.clone().with_value(duration))
+                    });
                 }
             }
         }
@@ -473,15 +470,15 @@ impl WireGuard {
                 || "".to_owned(),
                 |pc_latest_handshake_delay| format!("\n{}", pc_latest_handshake_delay.render())
             ),
-            pc_netmaker_peer_ping.map_or_else(
-                // this row adds pc_netmaker_peer_ping only if configured
+            pc_peer_ping.map_or_else(
+                // this row adds pc_peer_ping only if configured
                 || "".to_owned(),
-                |pc_netmaker_peer_ping| format!("\n{}", pc_netmaker_peer_ping.render())
+                |pc_peer_ping| format!("\n{}", pc_peer_ping.render())
             ),
-            pc_netmaker_endpoint_ping.map_or_else(
-                // this row adds pc_netmaker_endpoint_ping only if configured
+            pc_endpoint_ping.map_or_else(
+                // this row adds pc_endpoint_ping only if configured
                 || "".to_owned(),
-                |pc_netmaker_endpoint_ping| format!("\n{}", pc_netmaker_endpoint_ping.render())
+                |pc_endpoint_ping| format!("\n{}", pc_endpoint_ping.render())
             )
         )
     }
@@ -564,7 +561,7 @@ wg0\tsUsR6xufQQ8Tf0FuyY9tfEeYdhVMeFelr4ZMUrj+B0E=\t(none)\t10.211.123.128:51820\
             interfaces: None,
             export_remote_ip_and_port: true,
             export_latest_handshake_delay: false,
-            export_netmaker_peer_ping: false,
+            export_peer_ping: false,
         };
         let handle = tokio::runtime::Handle::current();
         let _ = handle.enter();
@@ -667,7 +664,7 @@ wireguard_latest_handshake_seconds{interface=\"wg0\",public_key=\"sUsR6xufQQ8Tf0
             interfaces: None,
             export_remote_ip_and_port: true,
             export_latest_handshake_delay: true,
-            export_netmaker_peer_ping: false,
+            export_peer_ping: false,
         };
         let handle = tokio::runtime::Handle::current();
         let _ = handle.enter();
@@ -704,7 +701,7 @@ wireguard_latest_handshake_seconds{interface=\"wg0\",public_key=\"sUsR6xufQQ8Tf0
             interfaces: None,
             export_remote_ip_and_port: true,
             export_latest_handshake_delay: false,
-            export_netmaker_peer_ping: false,
+            export_peer_ping: false,
         };
         let handle = tokio::runtime::Handle::current();
         let _ = handle.enter();
@@ -771,7 +768,7 @@ wireguard_latest_handshake_seconds{interface=\"wg0\",public_key=\"sUsR6xufQQ8Tf0
             interfaces: None,
             export_remote_ip_and_port: true,
             export_latest_handshake_delay: false,
-            export_netmaker_peer_ping: false,
+            export_peer_ping: false,
         };
         let handle = tokio::runtime::Handle::current();
         let _ = handle.enter();

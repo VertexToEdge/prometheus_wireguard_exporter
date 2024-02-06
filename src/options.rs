@@ -9,7 +9,7 @@ pub(crate) struct Options {
     pub interfaces: Option<Vec<String>>,
     pub export_remote_ip_and_port: bool,
     pub export_latest_handshake_delay: bool,
-    pub export_netmaker_peer_ping: bool,
+    pub export_peer_ping: bool,
 }
 
 impl Options {
@@ -30,9 +30,7 @@ impl Options {
             export_latest_handshake_delay: *matches
                 .get_one("export_latest_handshake_delay")
                 .unwrap_or(&false),
-            export_netmaker_peer_ping: *matches
-                .get_one("export_netmaker_peer_ping")
-                .unwrap_or(&false),
+            export_peer_ping: *matches.get_one("export_peer_ping").unwrap_or(&false),
         };
 
         options
