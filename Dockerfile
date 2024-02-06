@@ -9,7 +9,7 @@ COPY . .
 RUN RUSTFLAGS='-C target-feature=+crt-static' cargo build --target x86_64-unknown-linux-gnu --release -j 8
 
 FROM alpine:${ALPINE_VERSION}
-# FROM ubuntu:22.04
+
 EXPOSE 9586/tcp
 WORKDIR /usr/local/bin
 RUN apk add --no-cache --q tini && \
@@ -23,11 +23,5 @@ RUN apk add bash
 
 USER prometheus-wireguard-exporter
 COPY --from=build --chown=prometheus-wireguard-exporter /usr/src/prometheus_wireguard_exporter/target/x86_64-unknown-linux-gnu/release/prometheus_wireguard_exporter /usr/local/bin/prometheus_wireguard_exporter
-# ENTRYPOINT [ "/bin/bash" ]
-ENTRYPOINT ["/sbin/tini", "--" ,"/usr/local/bin/prometheus_wireguard_exporter", "-a", "true", "--export_netmaker_peer_ping","true", "-v", "true" ]
 
-# ENTRYPOINT ["/sbin/tini", "--" ,"/usr/local/bin/prometheus_wireguard_exporter", "-a", "true", "-v", "true" ]
-
-
-# ENTRYPOINT ["/usr/local/bin/prometheus_wireguard_exporter"]
-# CMD [ "--prepend_sudo", "false", "-a" ]
+ENTRYPOINT ["/sbin/tini", "--" ,"/usr/local/bin/prometheus_wireguard_exporter", "-a", "true" ]
